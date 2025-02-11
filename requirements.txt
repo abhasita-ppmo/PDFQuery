@@ -1,0 +1,16 @@
+streamlit
+PyPDF2
+transformers
+torch
+python-dotenv
+llama-index
+llama-index-core
+llama-index-embeddings-huggingface
+llama-index-llms-huggingface
+llama-parse
+llama-index-vector-stores-kdbai
+pandas
+llama-index-postprocessor-cohere-rerank
+kdbai_client
+huggingface_hub
+llama-index-llms-huggingface
