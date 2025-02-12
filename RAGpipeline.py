@@ -51,33 +51,29 @@ class PDFRAGSystem:
         Settings.llm = self.llm
 
     def _initialize_vector_db(self):
-        """Set up KDB.AI connection and table"""
+        """Set up KDB.AI connection and reset the table to avoid context mixing"""
         self.session = kdbai.Session(
             api_key=os.getenv("KDB_API_KEY"),
             endpoint=os.getenv("KDBAI_ENDPOINT", "https://cloud.kdb.ai/instance/i6boonn29w")
         )
         self.db = self.session.database("default")
-        self.table = self._create_kdbai_table()
+        self._reset_vector_store()
 
-    def _create_kdbai_table(self) -> kdbai.Table:
-        """Initialize or reset the vector database table"""
-        schema = [
-            {"name": "document_id", "type": "str"},
-            {"name": "text", "type": "str"},
-            {"name": "embeddings", "type": "float32s"},
-        ]
-
+    def _reset_vector_store(self):
+        """Drop the existing table and recreate it to prevent old document mixing"""
         try:
-            # Attempt to delete existing table
             self.db.table(self._TABLE_NAME).drop()
         except kdbai.KDBAIException as e:
-            # Ignore "Table not found" errors
             if "not found" not in str(e).lower():
-                raise RuntimeError(f"Failed to initialize KDB.AI table: {str(e)}")
+                raise RuntimeError(f"Failed to reset vector store: {str(e)}")
 
-        return self.db.create_table(
+        self.table = self.db.create_table(
             self._TABLE_NAME,
-            schema,
+            schema=[
+                {"name": "document_id", "type": "str"},
+                {"name": "text", "type": "str"},
+                {"name": "embeddings", "type": "float32s"},
+            ],
             indexes=[self._VECTOR_INDEX_CONFIG]
         )
 
@@ -86,10 +82,12 @@ class PDFRAGSystem:
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"PDF file not found: {pdf_path}")
 
+        self._reset_vector_store()  # Reset vector store before processing
+
         parser = LlamaParse(
             result_type="markdown",
             content_guideline_instruction=parsing_instructions or self._DEFAULT_PARSING_INSTRUCTIONS,
-            num_workers=min(4, os.cpu_count() or 1)  # Adaptive worker count
+            num_workers=min(4, os.cpu_count() or 1)
         )
         
         try:
@@ -114,10 +112,9 @@ class PDFRAGSystem:
             query_embedding = self.embed_model.get_text_embedding(question)
             results = self.table.search(
                 vectors={"flat": [query_embedding]},
-                n=top_k,
-                filter=[("<>", "document_id", "4a9551df-5dec-4410-90bb-43d17d722918")]
+                n=top_k
             )
-            context = "\n".join([row["text"] for _, row in results[0].iterrows()])
+            context = "\n".join([row["text"][:500] for _, row in results[0].iterrows()])
 
             response = self.llm.complete(self._format_prompt(context, question))
             return response.text.strip()

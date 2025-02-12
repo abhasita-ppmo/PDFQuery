@@ -114,7 +114,7 @@ with st.container(border=True):
 
 # --- Query Section ---
 with st.container(border=True):
-    st.markdown("### ❓ Ask a Question")
+    st.markdown("### Query PDF")
     
     question = st.text_input(
         "Enter your question:",
