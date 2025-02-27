@@ -64,7 +64,7 @@ st.markdown("<h1 style='text-align: center; margin-bottom: 30px;'>PDF Query Assi
 
 # --- Document Upload & Processing Section ---
 with st.container(border=True):
-    st.markdown("### 📤 Document Upload")
+    st.markdown("### Document Upload")
     
     uploaded_file = st.file_uploader(
         "Choose a PDF file",
@@ -77,7 +77,7 @@ with st.container(border=True):
     col1, col2 = st.columns([1, 3])
     with col1:
         process_btn = st.button(
-            "⚙️ Process PDF",
+            " Process PDF",
             disabled=not uploaded_file,
             help="Process the uploaded PDF for querying",
             use_container_width=True
@@ -97,7 +97,7 @@ with st.container(border=True):
                 temp_file.write(uploaded_file.getvalue())
                 temp_path = temp_file.name
             
-            with st.spinner("🧠 Analyzing document content..."):
+            with st.spinner(" Analyzing document content..."):
                 st.session_state.rag_system.process_pdf(temp_path)
                 os.unlink(temp_path)
                 
@@ -108,7 +108,7 @@ with st.container(border=True):
             st.rerun()
             
         except Exception as e:
-            st.error(f"❌ Processing failed: {str(e)}")
+            st.error(f" Processing failed: {str(e)}")
             st.session_state.pdf_processed = False
             st.stop()
 
