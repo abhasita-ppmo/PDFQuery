@@ -18,8 +18,9 @@ class PDFRAGSystem:
     _DEFAULT_PARSING_INSTRUCTIONS = (
         "Extract all text, tables, and figures faithfully. "
         "Preserve numerical data and structural relationships. "
-        "Pay special attention to separating individual names; if names appear in a list or line, "
+        "Pay special attention to separating individual names with first name and last name; if names appear in a list or line, "
         "ensure each name is captured as a separate text chunk."
+        "Maintain complete sentences and contextual relationships between paragraphs."
     )
     _EMBED_MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
     _LLM_MODEL_NAME = "mistralai/Mixtral-8x7B-Instruct-v0.1"
@@ -51,7 +52,7 @@ class PDFRAGSystem:
             model_name=self._LLM_MODEL_NAME,
             token=os.getenv("HF_TOKEN"),
             temperature=0.1,         # Makes the output more deterministic
-            max_new_tokens=200       # Adjust as necessary for your use case
+            max_new_tokens=512         # Adjust as necessary for your use case
         )
         Settings.embed_model = self.embed_model
         Settings.llm = self.llm
@@ -102,7 +103,7 @@ class PDFRAGSystem:
             print(f"PDF parsed successfully. Number of documents: {len(documents)}")
             
             # Initialize node parser with a specified chunk size to better split content
-            node_parser = MarkdownElementNodeParser(num_workers=min(4, os.cpu_count() or 1), chunk_size=20)
+            node_parser = MarkdownElementNodeParser(num_workers=min(4, os.cpu_count() or 1), chunk_size=512  )
             nodes = node_parser.get_nodes_from_documents(documents)
             print(f"Extracted {len(nodes)} nodes from the PDF.")
             
@@ -125,6 +126,11 @@ class PDFRAGSystem:
             print("Indexing completed successfully.")
         except Exception as e:
             raise RuntimeError(f"PDF processing failed: {str(e)}")
+        
+    def _fallback_response(self, question: str, context: str) -> str:
+        """Handle incomplete responses with alternative strategies"""
+        retry_prompt = f"Re-analyze this context and provide a more comprehensive answer to: {question}\n\nContext: {context[:10000]}"
+        return self.llm.complete(retry_prompt).text.strip()
 
     def query(self, question: str, top_k: int = 12) -> str:
         """Execute a query against the RAG system"""
@@ -140,7 +146,7 @@ class PDFRAGSystem:
                     # Each result might be a DataFrame; concatenate text fields from each row.
                     all_rows.extend(res.to_dict(orient="records"))
                 print(f"Retrieved {len(all_rows)} result rows.")
-                context = "\n".join([row["text"][:5000] for row in all_rows])
+                context = "\n".join([row["text"] for row in all_rows])
             else:
                 # If results is a single DataFrame
                 print(f"Retrieved {len(results)} result rows.")
@@ -149,7 +155,10 @@ class PDFRAGSystem:
             # Build the prompt with full context from all matching nodes
             prompt = self._format_prompt(context, question)
             response = self.llm.complete(prompt)
-            return response.text.strip()
+            response_text = response.text.strip()
+            if len(response_text) < 50 or "I don't know" in response_text:
+                return self._fallback_response(question, context)
+            return response_text
         except Exception as e:
             return f"Query failed: {str(e)}"
 
