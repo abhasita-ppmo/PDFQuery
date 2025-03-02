@@ -18,8 +18,10 @@ class PDFRAGSystem:
     _DEFAULT_PARSING_INSTRUCTIONS = (
         "Extract all text, tables, and figures faithfully. "
         "Preserve numerical data and structural relationships. "
-        "Pay special attention to separating individual names; if names appear in a list or line, "
+        "Pay special attention to separating individual names with first name and last name; if names appear in a list or line, "
         "ensure each name is captured as a separate text chunk."
+        "Maintain complete sentences and contextual relationships between paragraphs."
+        
     )
     _EMBED_MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
     _LLM_MODEL_NAME = "mistralai/Mixtral-8x7B-Instruct-v0.1"
@@ -50,8 +52,8 @@ class PDFRAGSystem:
         self.llm = HuggingFaceInferenceAPI(
             model_name=self._LLM_MODEL_NAME,
             token=os.getenv("HF_TOKEN"),
-            temperature=0.1,         # Makes the output more deterministic
-            max_new_tokens=200       # Adjust as necessary for your use case
+            temperature=0.1,
+            max_new_tokens=512
         )
         Settings.embed_model = self.embed_model
         Settings.llm = self.llm
@@ -88,64 +90,56 @@ class PDFRAGSystem:
         if not os.path.exists(pdf_path):
             raise FileNotFoundError(f"PDF file not found: {pdf_path}")
 
-        # Reset vector store to ensure a clean slate
         self._reset_vector_store()
 
         parser = LlamaParse(
             result_type="markdown",
             content_guideline_instruction=parsing_instructions or self._DEFAULT_PARSING_INSTRUCTIONS,
-            num_workers=min(4, os.cpu_count() or 1)
-        )
+            num_workers=min(4, os.cpu_count() or 1))
         
         try:
             documents = parser.load_data(pdf_path)
+            node_parser = MarkdownElementNodeParser(num_workers=min(4, os.cpu_count() or 1), chunk_size=512)
             print(f"PDF parsed successfully. Number of documents: {len(documents)}")
-            
-            # Initialize node parser with a specified chunk size to better split content
-            node_parser = MarkdownElementNodeParser(num_workers=min(4, os.cpu_count() or 1), chunk_size=20)
             nodes = node_parser.get_nodes_from_documents(documents)
-            print(f"Extracted {len(nodes)} nodes from the PDF.")
-            
             base_nodes, objects = node_parser.get_nodes_and_objects(nodes)
             total_nodes = len(base_nodes) + len(objects)
+
             print(f"Total nodes for indexing: {total_nodes}")
+            print(nodes)
             
-            # Initialize vector store and storage context
             vector_store = KDBAIVectorStore(self.table)
             storage_context = StorageContext.from_defaults(vector_store=vector_store)
             
-            # Build the index. This call automatically indexes and stores all nodes.
-            VectorStoreIndex(
+            self.index = VectorStoreIndex(
                 nodes=base_nodes + objects,
                 storage_context=storage_context,
                 show_progress=True
             )
-            # Persist the storage context to ensure all nodes are committed.
             storage_context.persist()
-            print("Indexing completed successfully.")
         except Exception as e:
             raise RuntimeError(f"PDF processing failed: {str(e)}")
+        
+    # def _fallback_response(self, question: str, context: str) -> str:
+    #     """Handle incomplete responses with alternative strategies"""
+    #     retry_prompt = f"Re-analyze this context and provide a more comprehensive answer to: {question}\n\nContext: {context[:10000]}"
+    #     return self.llm.complete(retry_prompt).text.strip()
 
-    def query(self, question: str, top_k: int = 12) -> str:
+    def query(self, question: str, top_k: int = 20) -> str:
         """Execute a query against the RAG system"""
         try:
             query_embedding = self.embed_model.get_text_embedding(question)
             # Search for top_k matches
             results = self.table.search(vectors={"flat": [query_embedding]}, n=top_k)
-            print(results)
-            # Debug logging: show number of results found
+            # Aggregate context from results
             if isinstance(results, list):
                 all_rows = []
                 for res in results:
-                    # Each result might be a DataFrame; concatenate text fields from each row.
                     all_rows.extend(res.to_dict(orient="records"))
-                print(f"Retrieved {len(all_rows)} result rows.")
                 context = "\n".join([row["text"][:5000] for row in all_rows])
             else:
-                # If results is a single DataFrame
-                print(f"Retrieved {len(results)} result rows.")
                 context = "\n".join(results["text"].tolist())
-                
+            
             # Build the prompt with full context from all matching nodes
             prompt = self._format_prompt(context, question)
             response = self.llm.complete(prompt)
@@ -160,6 +154,7 @@ class PDFRAGSystem:
             f"You are a technical research assistant. Use ONLY the context below to answer the question.\n"
             f"Be concise, factual, and reference specific parts of the context where possible.\n"
             f"If the answer isn't found in the context, simply say \"I don't know\".\n"
+            f"Please provide a complete and detailed answer.\n"
             f"<</SYS>>\n\n"
             f"Context:\n{context}\n\n"
             f"Question: {question}\n"
@@ -170,19 +165,19 @@ if __name__ == "__main__":
     try:
         rag_system = PDFRAGSystem()
         
-        # For Colab users, upload a file via the widget. Otherwise, provide a PDF file path.
-        try:
-            from google.colab import files
-            uploaded = files.upload()
-            pdf_path = next(iter(uploaded)) if uploaded else "default.pdf"
-        except ImportError:
-            pdf_path = "default.pdf"
+        # # For Colab users, upload a file via the widget. Otherwise, provide a PDF file path.
+        # try:
+        #     from google.colab import files
+        #     uploaded = files.upload()
+        #     pdf_path = next(iter(uploaded)) if uploaded else "default.pdf"
+        # except ImportError:
+        #     pdf_path = "default.pdf"
         
-        rag_system.process_pdf(pdf_path)
+        # rag_system.process_pdf(pdf_path)
 
-        # Change your query to be more specific if needed
-        question = "List all the names found in the council tax application."
-        print(f"\nQuestion: {question}")
-        print(f"Answer: {rag_system.query(question)}")
+        # # Change your query to be more specific if needed
+        # question = "List all the names found in the council tax application."
+        # print(f"\nQuestion: {question}")
+        # print(f"Answer: {rag_system.query(question)}")
     except Exception as e:
         print(f"System initialization failed: {str(e)}")
