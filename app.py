@@ -7,7 +7,6 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
-# Initialize application state
 def initialize_app_state():
     """Initialize all session state variables"""
     if "rag_system" not in st.session_state:
@@ -17,7 +16,6 @@ def initialize_app_state():
             st.error(f"Failed to initialize system: {str(e)}")
             st.stop()
     
-    # Initialize other state variables
     state_defaults = {
         "search_history": [],
         "pdf_processed": False,
@@ -36,7 +34,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize application state
 initialize_app_state()
 
 # --- Sidebar Section ---
@@ -47,22 +44,24 @@ with st.sidebar:
         for idx, (q, a) in enumerate(reversed(st.session_state.search_history), 1):
             with st.container(border=True):
                 st.markdown(f"**{idx}. {q}**")
-                st.markdown(f"<div style='margin-left: 15px; color: #444;'>{a}</div>", 
-                          unsafe_allow_html=True)
+                st.markdown(
+                    f"<div style='margin-left: 15px; color: #444;'>{a}</div>", 
+                    unsafe_allow_html=True
+                )
     else:
         st.info("No previous searches", icon="ℹ️")
     
     st.markdown("---")
     st.markdown("**How to Use**")
-    st.markdown("1. Upload a PDF document\n"
-                "2. Process the document\n"
-                "3. Ask questions naturally")
+    st.markdown("1. Upload a PDF document\n2. Ask questions naturally")
 
 # --- Main Interface ---
-st.markdown("<h1 style='text-align: center; margin-bottom: 30px;'>PDF Query Assistant</h1>", 
-          unsafe_allow_html=True)
+st.markdown(
+    "<h1 style='text-align: center; margin-bottom: 30px;'>PDF Query Assistant</h1>", 
+    unsafe_allow_html=True
+)
 
-# --- Document Upload & Processing Section ---
+# --- Document Upload Section ---
 with st.container(border=True):
     st.markdown("### Document Upload")
     
@@ -73,44 +72,12 @@ with st.container(border=True):
         key="file_uploader"
     )
     
-    # File processing controls
-    col1, col2 = st.columns([1, 3])
-    with col1:
-        process_btn = st.button(
-            " Process PDF",
-            disabled=not uploaded_file,
-            help="Process the uploaded PDF for querying",
-            use_container_width=True
-        )
-    
-    with col2:
-        if uploaded_file:
-            if st.session_state.pdf_processed:
-                st.success("Document ready for queries")
-            else:
-                st.warning("Document needs processing")
-
-    # Handle file processing
-    if process_btn and uploaded_file:
-        try:
-            with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
-                temp_file.write(uploaded_file.getvalue())
-                temp_path = temp_file.name
-            
-            with st.spinner(" Analyzing document content..."):
-                st.session_state.rag_system.process_pdf(temp_path)
-                os.unlink(temp_path)
-                
-                # Update state flags
-                st.session_state.pdf_processed = True
-                st.session_state.current_file_hash = hash(uploaded_file.getvalue())
-                
-            st.rerun()
-            
-        except Exception as e:
-            st.error(f" Processing failed: {str(e)}")
-            st.session_state.pdf_processed = False
-            st.stop()
+    if uploaded_file:
+        if st.session_state.pdf_processed and \
+           st.session_state.current_file_hash == hash(uploaded_file.getvalue()):
+            st.success("Document ready for queries")
+        else:
+            st.info("PDF uploaded - will process during first query")
 
 # --- Query Section ---
 with st.container(border=True):
@@ -124,35 +91,62 @@ with st.container(border=True):
     )
     
     search_btn = st.button(
-        "🔍 Search Answer",
-        disabled=not st.session_state.pdf_processed,
+        " Search Answer",
+        disabled=not uploaded_file,
         use_container_width=True
     )
     
     if search_btn:
         if not question.strip():
-            st.warning("Please enter a valid question", icon="⚠️")
+            st.warning("Please enter a valid question")
         else:
             try:
-                with st.spinner("🔍 Searching through document..."):
+                current_hash = hash(uploaded_file.getvalue())
+
+                # Check if processing is needed
+                if not st.session_state.pdf_processed or current_hash != st.session_state.current_file_hash:
+                    with st.spinner("📄 Processing PDF content..."):
+                        with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+                            temp_file.write(uploaded_file.getvalue())
+                            temp_path = temp_file.name
+                        try:
+                            st.session_state.rag_system.process_pdf(temp_path)
+                            st.session_state.pdf_processed = True
+                            st.session_state.current_file_hash = current_hash
+                        finally:
+                            os.unlink(temp_path)
+
+                # Execute query
+                with st.spinner("🔍 Analyzing document content..."):
                     answer = st.session_state.rag_system.query(question)
+                
+                # If error indicates missing index file, reprocess PDF and retry query
+                if answer.startswith("Query failed:") and "No such file or directory" in answer:
+                    with st.spinner("Reprocessing PDF..."):
+                        with NamedTemporaryFile(delete=False, suffix=".pdf") as temp_file:
+                            temp_file.write(uploaded_file.getvalue())
+                            temp_path = temp_file.name
+                        try:
+                            st.session_state.rag_system.process_pdf(temp_path)
+                            st.session_state.pdf_processed = True
+                            st.session_state.current_file_hash = current_hash
+                        finally:
+                            os.unlink(temp_path)
+                    with st.spinner("🔍 Retrying query..."):
+                        answer = st.session_state.rag_system.query(question)
+                        print("Generated answer:", answer)
                 
                 # Display results
                 with st.container(border=True):
-                    st.markdown("#### 📝 Answer")
-                    st.markdown(f"<div style='line-height: 1.6;'>{answer}</div>", 
-                              unsafe_allow_html=True)
-                    
+                    st.markdown("#### Answer")
+                    st.markdown(
+                        f"<div style='line-height: 1.4;'>{answer}</div>", 
+                        unsafe_allow_html=True
+                    )
+                
                 # Update search history
                 st.session_state.search_history.append((question, answer))
                 
             except Exception as e:
-                st.error(f"Search failed: {str(e)}", icon="❌")
-
-# --- File Change Detection ---
-if uploaded_file and st.session_state.current_file_hash:
-    current_hash = hash(uploaded_file.getvalue())
-    if current_hash != st.session_state.current_file_hash:
-        st.session_state.pdf_processed = False
-        st.session_state.search_history = []
-        st.rerun()
+                st.error(f"Error processing request: {str(e)}")
+                st.session_state.pdf_processed = False
