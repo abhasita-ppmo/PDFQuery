@@ -52,8 +52,8 @@ class PDFRAGSystem:
         self.llm = HuggingFaceInferenceAPI(
             model_name=self._LLM_MODEL_NAME,
             token=os.getenv("HF_TOKEN"),
-            temperature=0.2,
-            max_new_tokens=1024
+            temperature=0.1,
+            max_new_tokens=512
         )
         Settings.embed_model = self.embed_model
         Settings.llm = self.llm
@@ -100,8 +100,12 @@ class PDFRAGSystem:
         try:
             documents = parser.load_data(pdf_path)
             node_parser = MarkdownElementNodeParser(num_workers=min(4, os.cpu_count() or 1), chunk_size=512)
+            print(f"PDF parsed successfully. Number of documents: {len(documents)}")
             nodes = node_parser.get_nodes_from_documents(documents)
             base_nodes, objects = node_parser.get_nodes_and_objects(nodes)
+            total_nodes = len(base_nodes) + len(objects)
+
+            print(f"Total nodes for indexing: {total_nodes}")
             print(nodes)
             
             vector_store = KDBAIVectorStore(self.table)
@@ -121,7 +125,7 @@ class PDFRAGSystem:
     #     retry_prompt = f"Re-analyze this context and provide a more comprehensive answer to: {question}\n\nContext: {context[:10000]}"
     #     return self.llm.complete(retry_prompt).text.strip()
 
-    def query(self, question: str, top_k: int = 12) -> str:
+    def query(self, question: str, top_k: int = 20) -> str:
         """Execute a query against the RAG system"""
         try:
             query_embedding = self.embed_model.get_text_embedding(question)
@@ -132,17 +136,14 @@ class PDFRAGSystem:
                 all_rows = []
                 for res in results:
                     all_rows.extend(res.to_dict(orient="records"))
-                context = "\n".join([row["text"] for row in all_rows])
+                context = "\n".join([row["text"][:5000] for row in all_rows])
             else:
                 context = "\n".join(results["text"].tolist())
             
             # Build the prompt with full context from all matching nodes
             prompt = self._format_prompt(context, question)
             response = self.llm.complete(prompt)
-            response_text = response.text.strip()
-            # if len(response_text) < 50 or "I don't know" in response_text:
-            #     return self._fallback_response(question, str(response))
-            return response_text
+            return response.text.strip()
         except Exception as e:
             return f"Query failed: {str(e)}"
 
