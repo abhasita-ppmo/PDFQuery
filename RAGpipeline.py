@@ -52,8 +52,8 @@ class PDFRAGSystem:
         self.llm = HuggingFaceInferenceAPI(
             model_name=self._LLM_MODEL_NAME,
             token=os.getenv("HF_TOKEN"),
-            temperature=0.3,
-            max_new_tokens=3072
+            temperature=0.2,
+            max_new_tokens=1024
         )
         Settings.embed_model = self.embed_model
         Settings.llm = self.llm
@@ -102,6 +102,7 @@ class PDFRAGSystem:
             node_parser = MarkdownElementNodeParser(num_workers=min(4, os.cpu_count() or 1), chunk_size=512)
             nodes = node_parser.get_nodes_from_documents(documents)
             base_nodes, objects = node_parser.get_nodes_and_objects(nodes)
+            print(nodes)
             
             vector_store = KDBAIVectorStore(self.table)
             storage_context = StorageContext.from_defaults(vector_store=vector_store)
@@ -115,10 +116,10 @@ class PDFRAGSystem:
         except Exception as e:
             raise RuntimeError(f"PDF processing failed: {str(e)}")
         
-    def _fallback_response(self, question: str, context: str) -> str:
-        """Handle incomplete responses with alternative strategies"""
-        retry_prompt = f"Re-analyze this context and provide a more comprehensive answer to: {question}\n\nContext: {context[:10000]}"
-        return self.llm.complete(retry_prompt).text.strip()
+    # def _fallback_response(self, question: str, context: str) -> str:
+    #     """Handle incomplete responses with alternative strategies"""
+    #     retry_prompt = f"Re-analyze this context and provide a more comprehensive answer to: {question}\n\nContext: {context[:10000]}"
+    #     return self.llm.complete(retry_prompt).text.strip()
 
     def query(self, question: str, top_k: int = 12) -> str:
         """Execute a query against the RAG system"""
@@ -139,16 +140,8 @@ class PDFRAGSystem:
             prompt = self._format_prompt(context, question)
             response = self.llm.complete(prompt)
             response_text = response.text.strip()
-            
-            # If the answer doesn't seem to be complete (e.g. missing sentence-ending punctuation)
-            if not response_text.endswith(('.', '!', '?')):
-                print('need to cont')
-                continuation = self.llm.complete("Please continue your answer.").text.strip()
-                response_text += " " + continuation
-            
-            # Fallback if answer is too short or indicates uncertainty
-            if len(response_text) < 50 or "I don't know" in response_text:
-                return self._fallback_response(question, str(response))
+            # if len(response_text) < 50 or "I don't know" in response_text:
+            #     return self._fallback_response(question, str(response))
             return response_text
         except Exception as e:
             return f"Query failed: {str(e)}"
