@@ -136,7 +136,7 @@ class PDFRAGSystem:
                 all_rows = []
                 for res in results:
                     all_rows.extend(res.to_dict(orient="records"))
-                context = "\n".join([row["text"][:5000] for row in all_rows])
+                context = "\n".join([row["text"][:500] for row in all_rows])
             else:
                 context = "\n".join(results["text"].tolist())
             
@@ -154,7 +154,7 @@ class PDFRAGSystem:
             f"You are a technical research assistant. Use ONLY the context below to answer the question.\n"
             f"Be concise, factual, and reference specific parts of the context where possible.\n"
             f"If the answer isn't found in the context, simply say \"I don't know\".\n"
-            f"Please provide a complete and detailed answer.\n"
+            f"Please provide a complete and detailed answer. The answer should with proper punctuations\n"
             f"<</SYS>>\n\n"
             f"Context:\n{context}\n\n"
             f"Question: {question}\n"
