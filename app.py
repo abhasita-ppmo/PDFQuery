@@ -29,7 +29,7 @@ def initialize_app_state():
 # Configure page settings
 st.set_page_config(
     page_title="PDF Query Assistant",
-    page_icon="📄",
+
     layout="centered",
     initial_sidebar_state="expanded"
 )
@@ -38,7 +38,7 @@ initialize_app_state()
 
 # --- Sidebar Section ---
 with st.sidebar:
-    st.header("📚 Search History")
+    st.header("Search History")
     
     if st.session_state.search_history:
         for idx, (q, a) in enumerate(reversed(st.session_state.search_history), 1):
@@ -49,7 +49,7 @@ with st.sidebar:
                     unsafe_allow_html=True
                 )
     else:
-        st.info("No previous searches", icon="ℹ️")
+        st.info("No previous searches")
     
     st.markdown("---")
     st.markdown("**How to Use**")
