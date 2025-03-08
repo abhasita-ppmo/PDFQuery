@@ -13,3 +13,4 @@ pandas
 llama-index-postprocessor-cohere-rerank
 kdbai_client
 huggingface_hub
+llama_index.llms.groq
