@@ -10,7 +10,7 @@ import kdbai_client as kdbai
 from dotenv import load_dotenv
 # Environment Configuration
 load_dotenv()
-os.environ["HUGGINGFACEHUB_API_TOKEN"] = os.getenv("HF_TOKEN")
+# os.environ["HUGGINGFACEHUB_API_TOKEN"] = os.getenv("HF_TOKEN")
 os.environ["LLAMA_CLOUD_API_KEY"] = os.getenv("LLAMA_CLOUD_API_KEY")
 class PDFRAGSystem:
     _DEFAULT_PARSING_INSTRUCTIONS = (
