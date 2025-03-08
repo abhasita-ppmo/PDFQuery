@@ -114,11 +114,17 @@ class PDFRAGSystem:
             # Search for top_k matches
             results = self.table.search(vectors={"flat": [query_embedding]}, n=top_k)
             # Aggregate context from results
+            MAX_CONTEXT_TOKENS = 3000  # ~75% of 4096 context window
+            CHAR_PER_TOKEN = 4
+            
+            # Calculate dynamically
+            max_chars = (MAX_CONTEXT_TOKENS // top_k) * CHAR_PER_TOKEN
+            print(max_chars)
             if isinstance(results, list):
                 all_rows = []
                 for res in results:
                     all_rows.extend(res.to_dict(orient="records"))
-                context = "\n".join([row["text"][:5000] for row in all_rows])
+                context = "\n".join([row["text"][:max_chars] for row in all_rows])
             else:
                 context = "\n".join(results["text"].tolist())
             # Build the prompt with full context from all matching nodes
