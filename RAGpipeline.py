@@ -1,24 +1,32 @@
 import os
+os.environ["STREAMLIT_SERVER_ENABLE_FILE_WATCHER"] = "false" 
 from typing import Optional
 from llama_parse import LlamaParse
 from llama_index.core import Settings, StorageContext, VectorStoreIndex
-from llama_index.core.node_parser import MarkdownElementNodeParser
+# from llama_index.core.node_parser import MarkdownElementNodeParser
+from llama_index.core.node_parser import SimpleNodeParser
+
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
 from llama_index.llms.groq import Groq 
 from llama_index.vector_stores.kdbai import KDBAIVectorStore
 import kdbai_client as kdbai
 from dotenv import load_dotenv
+import nest_asyncio
+nest_asyncio.apply() 
 # Environment Configuration
 load_dotenv()
 # os.environ["HUGGINGFACEHUB_API_TOKEN"] = os.getenv("HF_TOKEN")
 os.environ["LLAMA_CLOUD_API_KEY"] = os.getenv("LLAMA_CLOUD_API_KEY")
 class PDFRAGSystem:
     _DEFAULT_PARSING_INSTRUCTIONS = (
-        "Extract all text, tables, and figures faithfully. "
-        "Preserve numerical data and structural relationships. "
-        "Pay special attention to separating individual names with first name and last name; if names appear in a list or line, "
-        "ensure each name is captured as a separate text chunk."
-        "Maintain complete sentences and contextual relationships between paragraphs."
+        "Extract all text content with maximum fidelity. "
+        "Preserve original formatting where possible. "
+        "Convert visual elements to descriptive text. "
+        "Handle ambiguous layouts as linear text flow."
+        "Extract all content as linear text with markdown formatting. "
+        "Convert tables to markdown format using pipe syntax. "
+        "Treat 'Not Provided' as empty values. "
+        "Preserve original text order without schema assumptions"
     )
     _EMBED_MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
     _LLM_MODEL_NAME = "mixtral-8x7b-32768" 
@@ -83,30 +91,36 @@ class PDFRAGSystem:
         parser = LlamaParse(
             result_type="markdown",
             content_guideline_instruction=parsing_instructions or self._DEFAULT_PARSING_INSTRUCTIONS,
-            num_workers=min(4, os.cpu_count() or 1))
+            parse_table=False,
+            table_output_format="markdown",
+            num_workers=1 #min(4, os.cpu_count() or 1) 
+        )
+            
         try:
             documents = parser.load_data(pdf_path)
-            node_parser = MarkdownElementNodeParser(num_workers=min(4, os.cpu_count() or 1), chunk_size=512)
+            node_parser = SimpleNodeParser.from_defaults(
+                chunk_size=100,
+                chunk_overlap=10,
+                include_metadata=True
+            )
+            #node_parser = MarkdownElementNodeParser(num_workers=min(4, os.cpu_count() or 1), chunk_size=1024,include_metadata=True,table_processing_mode="text" )
             print(f"PDF parsed successfully. Number of documents: {len(documents)}")
             nodes = node_parser.get_nodes_from_documents(documents)
-            base_nodes, objects = node_parser.get_nodes_and_objects(nodes)
-            total_nodes = len(base_nodes) + len(objects)
-            print(f"Total nodes for indexing: {total_nodes}")
             print(nodes)
+            # base_nodes, objects = node_parser.get_nodes_and_objects(nodes)
+            # total_nodes = len(base_nodes) + len(objects)
+            # print(f"Total nodes for indexing: {total_nodes}")
+            # print(nodes)
             vector_store = KDBAIVectorStore(self.table)
             storage_context = StorageContext.from_defaults(vector_store=vector_store)
             self.index = VectorStoreIndex(
-                nodes=base_nodes + objects,
+                nodes=nodes,
                 storage_context=storage_context,
                 show_progress=True
             )
             storage_context.persist()
         except Exception as e:
             raise RuntimeError(f"PDF processing failed: {str(e)}")
-    # def _fallback_response(self, question: str, context: str) -> str:
-    #     """Handle incomplete responses with alternative strategies"""
-    #     retry_prompt = f"Re-analyze this context and provide a more comprehensive answer to: {question}\n\nContext: {context[:10000]}"
-    #     return self.llm.complete(retry_prompt).text.strip()
     def query(self, question: str, top_k: int = 20) -> str:
         """Execute a query against the RAG system"""
         try:
