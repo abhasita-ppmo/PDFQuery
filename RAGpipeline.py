@@ -29,7 +29,7 @@ class PDFRAGSystem:
         "Preserve original text order without schema assumptions"
     )
     _EMBED_MODEL_NAME = "sentence-transformers/all-mpnet-base-v2"
-    _LLM_MODEL_NAME = "mixtral-8x7b-32768" 
+    _LLM_MODEL_NAME = "llama-3.3-70b-versatile" 
     _TABLE_NAME = "LlamaParse_RAG_Table2"
     _VECTOR_INDEX_CONFIG = {
         "name": "flat",
@@ -55,7 +55,7 @@ class PDFRAGSystem:
             model=self._LLM_MODEL_NAME,
             api_key=os.getenv("GROQ_API_KEY"),
             temperature=0.1,
-            max_tokens=512
+            max_tokens=1024
         )
         Settings.embed_model = self.embed_model
         Settings.llm = self.llm
@@ -99,8 +99,8 @@ class PDFRAGSystem:
         try:
             documents = parser.load_data(pdf_path)
             node_parser = SimpleNodeParser.from_defaults(
-                chunk_size=100,
-                chunk_overlap=10,
+                chunk_size=200,
+                chunk_overlap=20,
                 include_metadata=True
             )
             #node_parser = MarkdownElementNodeParser(num_workers=min(4, os.cpu_count() or 1), chunk_size=1024,include_metadata=True,table_processing_mode="text" )
@@ -128,7 +128,7 @@ class PDFRAGSystem:
             # Search for top_k matches
             results = self.table.search(vectors={"flat": [query_embedding]}, n=top_k)
             # Aggregate context from results
-            MAX_CONTEXT_TOKENS = 3000  # ~75% of 4096 context window
+            MAX_CONTEXT_TOKENS = 6000  # ~75% of 4096 context window
             CHAR_PER_TOKEN = 4
             
             # Calculate dynamically
@@ -148,18 +148,18 @@ class PDFRAGSystem:
         except Exception as e:
             return f"Query failed: {str(e)}"
     def _format_prompt(self, context: str, question: str) -> str:
-        """Generate structured prompt template"""
+        """Generate structured prompt template for Llama 3.3"""
         return (
-            f"<s>[INST] <<SYS>>\n"
-            f"You are a technical research assistant. Use ONLY the context below to answer the question.\n"
-            f"Be concise, factual, and reference specific parts of the context where possible.\n"
-            f"If the answer isn't found in the context, simply say \"I don't know\".\n"
-            f"Please provide a complete and detailed answer\n"
-            f"Always complete the answer with a fullstop\n"
-            f"<</SYS>>\n\n"
+            "<|begin_of_text|>"
+            "<|start_header_id|>system<|end_header_id|>\n"
+            "You are a technical research assistant. Use ONLY the context below to answer the question.\n"
+            "Be concise, factual, and reference specific parts of the context where possible.\n"
+            "If the answer isn't found in the context, simply say \"I don't know\".\n"
+            "Provide complete and detailed answers ending with a fullstop.<|eot_id|>"
+            "<|start_header_id|>user<|end_header_id|>\n"
             f"Context:\n{context}\n\n"
-            f"Question: {question}\n"
-            f"Answer: [/INST]"
+            f"Question: {question}<|eot_id|>"
+            "<|start_header_id|>assistant<|end_header_id|>\n"
         )
 if __name__ == "__main__":
     try:
