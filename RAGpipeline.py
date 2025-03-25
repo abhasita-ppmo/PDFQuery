@@ -147,6 +147,44 @@ class PDFRAGSystem:
             return response.text.strip()
         except Exception as e:
             return f"Query failed: {str(e)}"
+    def search(self, pdf_path: str, question: str) -> str:
+        """Query a PDF using a fine-tuned LLM without using RAG.
+        
+        This method extracts text from a PDF and directly queries it using the LLM.
+        
+        Args:
+            pdf_path (str): Path to the PDF file.
+            question (str): The question to ask the LLM.
+        
+        Returns:
+            str: The LLM-generated answer.
+        """
+        if not os.path.exists(pdf_path):
+            raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+
+        try:
+            prompt = (
+                "<|begin_of_text|>"
+                "<|start_header_id|>system<|end_header_id|>\n"
+                "<|eot_id|>\n"
+                "<|start_header_id|>user<|end_header_id|>\n"
+                f"Question: {question}<|eot_id|>\n"
+                "<|start_header_id|>assistant<|end_header_id|>\n"
+            )
+            temp_llm = Groq(
+                model=self._LLM_MODEL_NAME,
+                api_key=os.getenv("GROQ_API_KEY"),
+                temperature=1.9,  # Max allowed by most APIs
+                max_tokens=2000,  # Longer responses
+                top_p=0.95,       # Broader sampling
+            )
+
+            # Step 4: Get LLM response
+            response = temp_llm.complete(prompt)
+            return response.text.strip()
+
+        except Exception as e:
+            return f"Query failed: {str(e)}"
     def _format_prompt(self, context: str, question: str) -> str:
         """Generate structured prompt template for Llama 3.3"""
         return (
