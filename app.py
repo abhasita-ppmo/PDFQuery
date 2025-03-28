@@ -50,10 +50,7 @@ with st.sidebar:
                 )
     else:
         st.info("No previous searches", icon="ℹ️")
-    
-    st.markdown("---")
-    st.markdown("**How to Use**")
-    st.markdown("1. Upload a PDF document\n2. Ask questions naturally")
+
 
 # --- Main Interface ---
 st.markdown(
