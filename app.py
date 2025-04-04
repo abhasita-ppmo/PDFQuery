@@ -98,7 +98,7 @@ with st.container():
     st.session_state.search_mode = st.toggle(
         "Enable RAG (Generative Answers)",
         value=True,
-        help="Toggle ON for generated answers, OFF for direct text matches"
+        help="Toggle ON for generated answers, and OFF for direct text matches"
     )
 
     col1, col2 = st.columns([4, 1])
